@@ -4,7 +4,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import bcrypt from "bcrypt";
 import mongoose, { Schema, Document } from "mongoose";
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
  
 // --- MongoDB Connection ---
 mongoose.connect(process.env.MONGODB_URI || "")
@@ -52,8 +52,16 @@ const UserSchema = new Schema<IUser>({
  
 const User = mongoose.model<IUser>("User", UserSchema);
  
-// --- Resend Setup ---
-const resend = new Resend(process.env.RESEND_API_KEY);
+// --- Brevo SMTP Setup ---
+const transporter = nodemailer.createTransport({
+  host: "smtp-relay.brevo.com",
+  port: 587,
+  secure: false,
+  auth: {
+    user: process.env.BREVO_SMTP_USER,
+    pass: process.env.BREVO_SMTP_PASS,
+  },
+});
  
 // --- Seed default users ---
 async function seedDefaultUsers() {
@@ -126,8 +134,8 @@ async function startServer() {
       resetCodeExpiry: expiry,
     });
  
-    await resend.emails.send({
-      from: "onboarding@resend.dev",
+    await transporter.sendMail({
+      from: `"TaskMaster Pro" <${process.env.BREVO_SMTP_USER}>`,
       to: email,
       subject: "TaskMaster Pro — Your Reset Code",
       html: `
@@ -245,3 +253,4 @@ async function startServer() {
 }
  
 startServer();
+ 
