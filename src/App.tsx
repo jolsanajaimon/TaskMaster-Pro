@@ -320,7 +320,7 @@ export default function App() {
                 <motion.p 
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
-                  className="text-rose-500 text-xs font-bold ml-1"
+                  className={`text-xs font-bold ml-1 ${loginError.includes("Account created") ? "text-emerald-500" : "text-rose-500"}`}
                 >
                   {loginError}
                 </motion.p>
