@@ -5,7 +5,6 @@ import path from "path";
 import bcrypt from "bcrypt";
 import mongoose, { Schema, Document } from "mongoose";
 import { Resend } from "resend";
-import crypto from "crypto";
  
 // --- MongoDB Connection ---
 mongoose.connect(process.env.MONGODB_URI || "")
@@ -108,7 +107,7 @@ async function startServer() {
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
-    res.json({ username: user.username, role: user.role });
+    res.json({ username: user.username, role: user.role, email: user.email });
   });
  
   // Auth: Send Reset Code
@@ -119,9 +118,8 @@ async function startServer() {
       return res.status(404).json({ error: "No account found with this email" });
     }
  
-    // Generate 6-digit code
     const code = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiry = Date.now() + 600000; // 10 minutes
+    const expiry = Date.now() + 600000;
  
     await User.findByIdAndUpdate(user._id, {
       resetCode: code,
@@ -168,6 +166,37 @@ async function startServer() {
     });
  
     res.json({ success: true, message: "Password reset successfully" });
+  });
+ 
+  // Profile: Get
+  app.get("/api/profile", async (req, res) => {
+    const username = req.query.username as string;
+    const user = await User.findOne({ username });
+    if (!user) return res.status(404).json({ error: "User not found" });
+    res.json({ username: user.username, email: user.email, role: user.role });
+  });
+ 
+  // Profile: Update Email
+  app.post("/api/profile/update-email", async (req, res) => {
+    const { username, email } = req.body;
+    const existing = await User.findOne({ email, username: { $ne: username } });
+    if (existing) {
+      return res.status(400).json({ error: "Email already in use by another account" });
+    }
+    await User.findOneAndUpdate({ username }, { email });
+    res.json({ success: true, message: "Email updated successfully" });
+  });
+ 
+  // Profile: Change Password
+  app.post("/api/profile/change-password", async (req, res) => {
+    const { username, currentPassword, newPassword } = req.body;
+    const user = await User.findOne({ username });
+    if (!user || !(await bcrypt.compare(currentPassword, user.password))) {
+      return res.status(401).json({ error: "Current password is incorrect" });
+    }
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await User.findOneAndUpdate({ username }, { password: hashedPassword });
+    res.json({ success: true, message: "Password changed successfully" });
   });
  
   // Tasks: Get

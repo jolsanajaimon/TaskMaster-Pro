@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { 
   Plus, Trash2, CheckCircle2, Circle, ListTodo, Search, Filter, 
-  Calendar, Tag, AlertCircle, Sparkles, Moon, Sun, LogOut, ShieldCheck, User as UserIcon, LogIn
+  Calendar, Tag, AlertCircle, Sparkles, Moon, Sun, LogOut, ShieldCheck, 
+  User as UserIcon, LogIn, X, Mail, Lock, Check
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
- 
+
 interface Task {
   id: string;
   text: string;
@@ -13,29 +14,30 @@ interface Task {
   priority: "low" | "medium" | "high";
   category: string;
 }
- 
+
 type FilterType = "all" | "active" | "completed";
 type UserRole = "user" | "admin" | null;
 type AuthScreen = "role" | "login" | "register" | "forgot" | "verify";
- 
+
 interface AuthUser {
   username: string;
   role: UserRole;
+  email?: string;
 }
- 
+
 const CATEGORIES = ["Personal", "Work", "Shopping", "Health", "Other"];
 const PRIORITIES = [
   { value: "low", label: "Low", color: "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700" },
   { value: "medium", label: "Medium", color: "bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800" },
   { value: "high", label: "High", color: "bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-900/20 dark:text-rose-400 dark:border-rose-800" },
 ];
- 
+
 export default function App() {
   const [user, setUser] = useState<AuthUser | null>(() => {
     const saved = localStorage.getItem("taskmaster_user");
     return saved ? JSON.parse(saved) : null;
   });
- 
+
   const [authScreen, setAuthScreen] = useState<AuthScreen>("role");
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [loginUsername, setLoginUsername] = useState("");
@@ -47,30 +49,48 @@ export default function App() {
   const [authMessage, setAuthMessage] = useState("");
   const [authError, setAuthError] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
- 
+
+  // Profile modal state
+  const [showProfile, setShowProfile] = useState(false);
+  const [profileEmail, setProfileEmail] = useState("");
+  const [profileCurrentPassword, setProfileCurrentPassword] = useState("");
+  const [profileNewPassword, setProfileNewPassword] = useState("");
+  const [profileMessage, setProfileMessage] = useState("");
+  const [profileError, setProfileError] = useState("");
+  const [profileTab, setProfileTab] = useState<"email" | "password">("email");
+
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem("taskmaster_theme");
     return saved === "dark";
   });
- 
+
   const [tasks, setTasks] = useState<Task[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [priority, setPriority] = useState<Task["priority"]>("medium");
   const [category, setCategory] = useState("Personal");
   const [filter, setFilter] = useState<FilterType>("all");
   const [searchQuery, setSearchQuery] = useState("");
- 
+
   useEffect(() => {
     if (user) {
       fetch(`/api/tasks?username=${user.username}`)
         .then(res => res.json())
         .then(data => { if (Array.isArray(data)) setTasks(data); })
         .catch(err => console.error("Failed to fetch tasks:", err));
+      
+      // Load profile email
+      fetch(`/api/profile?username=${user.username}`)
+        .then(res => res.json())
+        .then(data => {
+          setProfileEmail(data.email || "");
+          setUser(prev => prev ? { ...prev, email: data.email } : prev);
+        })
+        .catch(() => {});
     } else {
       setTasks([]);
     }
-  }, [user]);
- 
+  }, [user?.username]);
+
   useEffect(() => {
     if (user && tasks.length > 0) {
       setIsSyncing(true);
@@ -84,11 +104,11 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [tasks, user]);
- 
+
   useEffect(() => {
     localStorage.setItem("taskmaster_user", JSON.stringify(user));
   }, [user]);
- 
+
   useEffect(() => {
     localStorage.setItem("taskmaster_theme", isDarkMode ? "dark" : "light");
     if (isDarkMode) {
@@ -99,24 +119,19 @@ export default function App() {
       document.body.classList.remove("dark");
     }
   }, [isDarkMode]);
- 
+
   const resetAuthForm = () => {
-    setLoginUsername("");
-    setLoginPassword("");
-    setLoginEmail("");
-    setForgotEmail("");
-    setResetCode("");
-    setNewPassword("");
-    setAuthError("");
-    setAuthMessage("");
+    setLoginUsername(""); setLoginPassword(""); setLoginEmail("");
+    setForgotEmail(""); setResetCode(""); setNewPassword("");
+    setAuthError(""); setAuthMessage("");
   };
- 
+
   const handleRoleSelect = (role: UserRole) => {
     setSelectedRole(role);
     setAuthScreen("login");
     resetAuthForm();
   };
- 
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError("");
@@ -129,18 +144,13 @@ export default function App() {
       const data = await res.json();
       if (res.ok) setUser(data);
       else setAuthError(data.error || "Login failed");
-    } catch {
-      setAuthError("Server connection failed");
-    }
+    } catch { setAuthError("Server connection failed"); }
   };
- 
+
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError("");
-    if (loginPassword.length < 6) {
-      setAuthError("Password must be at least 6 characters");
-      return;
-    }
+    if (loginPassword.length < 6) { setAuthError("Password must be at least 6 characters"); return; }
     try {
       const res = await fetch("/api/auth/register", {
         method: "POST",
@@ -148,22 +158,14 @@ export default function App() {
         body: JSON.stringify({ username: loginUsername, password: loginPassword, role: selectedRole, email: loginEmail })
       });
       const data = await res.json();
-      if (res.ok) {
-        setAuthScreen("login");
-        setAuthMessage("Account created! Please sign in.");
-        resetAuthForm();
-      } else {
-        setAuthError(data.error || "Registration failed");
-      }
-    } catch {
-      setAuthError("Server connection failed");
-    }
+      if (res.ok) { setAuthScreen("login"); setAuthMessage("Account created! Please sign in."); resetAuthForm(); }
+      else setAuthError(data.error || "Registration failed");
+    } catch { setAuthError("Server connection failed"); }
   };
- 
+
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    setAuthError("");
-    setAuthMessage("");
+    setAuthError(""); setAuthMessage("");
     try {
       const res = await fetch("/api/auth/forgot-password", {
         method: "POST",
@@ -171,24 +173,15 @@ export default function App() {
         body: JSON.stringify({ email: forgotEmail })
       });
       const data = await res.json();
-      if (res.ok) {
-        setAuthScreen("verify");
-        setAuthMessage("6-digit code sent to your email!");
-      } else {
-        setAuthError(data.error || "Failed to send code");
-      }
-    } catch {
-      setAuthError("Server connection failed");
-    }
+      if (res.ok) { setAuthScreen("verify"); setAuthMessage("6-digit code sent to your email!"); }
+      else setAuthError(data.error || "Failed to send code");
+    } catch { setAuthError("Server connection failed"); }
   };
- 
+
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError("");
-    if (newPassword.length < 6) {
-      setAuthError("Password must be at least 6 characters");
-      return;
-    }
+    if (newPassword.length < 6) { setAuthError("Password must be at least 6 characters"); return; }
     try {
       const res = await fetch("/api/auth/reset-password", {
         method: "POST",
@@ -196,90 +189,96 @@ export default function App() {
         body: JSON.stringify({ email: forgotEmail, code: resetCode, password: newPassword })
       });
       const data = await res.json();
+      if (res.ok) { setAuthScreen("role"); setAuthMessage("Password reset! You can now sign in."); resetAuthForm(); }
+      else setAuthError(data.error || "Invalid or expired code");
+    } catch { setAuthError("Server connection failed"); }
+  };
+
+  const handleUpdateEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileError(""); setProfileMessage("");
+    try {
+      const res = await fetch("/api/profile/update-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: user?.username, email: profileEmail })
+      });
+      const data = await res.json();
       if (res.ok) {
-        setAuthScreen("role");
-        setAuthMessage("Password reset! You can now sign in.");
-        resetAuthForm();
-      } else {
-        setAuthError(data.error || "Invalid or expired code");
-      }
-    } catch {
-      setAuthError("Server connection failed");
-    }
+        setProfileMessage("Email updated successfully!");
+        setUser(prev => prev ? { ...prev, email: profileEmail } : prev);
+      } else setProfileError(data.error || "Failed to update email");
+    } catch { setProfileError("Server connection failed"); }
   };
- 
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileError(""); setProfileMessage("");
+    if (profileNewPassword.length < 6) { setProfileError("New password must be at least 6 characters"); return; }
+    try {
+      const res = await fetch("/api/profile/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: user?.username, currentPassword: profileCurrentPassword, newPassword: profileNewPassword })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setProfileMessage("Password changed successfully!");
+        setProfileCurrentPassword(""); setProfileNewPassword("");
+      } else setProfileError(data.error || "Failed to change password");
+    } catch { setProfileError("Server connection failed"); }
+  };
+
   const handleLogout = () => {
-    setUser(null);
-    setAuthScreen("role");
-    setSelectedRole(null);
-    resetAuthForm();
+    setUser(null); setAuthScreen("role"); setSelectedRole(null); resetAuthForm();
   };
- 
+
   const addTask = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (inputValue.trim()) {
-      const newTask: Task = {
-        id: crypto.randomUUID(),
-        text: inputValue.trim(),
-        completed: false,
-        createdAt: Date.now(),
-        priority,
-        category,
-      };
-      setTasks([newTask, ...tasks]);
+      setTasks([{ id: crypto.randomUUID(), text: inputValue.trim(), completed: false, createdAt: Date.now(), priority, category }, ...tasks]);
       setInputValue("");
     }
   };
- 
-  const toggleTask = (id: string) => {
-    setTasks(tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
-  };
- 
+
+  const toggleTask = (id: string) => setTasks(tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+
   const deleteTask = (id: string) => {
     const task = tasks.find(t => t.id === id);
     if (!task) return;
-    if (user?.role === "admin" || task.completed) {
-      setTasks(tasks.filter(t => t.id !== id));
-    }
+    if (user?.role === "admin" || task.completed) setTasks(tasks.filter(t => t.id !== id));
   };
- 
-  const bulkComplete = () => {
-    if (user?.role === "admin") setTasks(tasks.map(t => ({ ...t, completed: true })));
-  };
- 
+
+  const bulkComplete = () => { if (user?.role === "admin") setTasks(tasks.map(t => ({ ...t, completed: true }))); };
   const clearCompleted = () => setTasks(tasks.filter(t => !t.completed));
- 
+
   const filteredTasks = useMemo(() => {
     return tasks
-      .filter(t => {
-        if (filter === "active") return !t.completed;
-        if (filter === "completed") return t.completed;
-        return true;
-      })
+      .filter(t => { if (filter === "active") return !t.completed; if (filter === "completed") return t.completed; return true; })
       .filter(t => t.text.toLowerCase().includes(searchQuery.toLowerCase()))
       .sort((a, b) => {
         if (a.completed !== b.completed) return a.completed ? 1 : -1;
-        const priorityMap = { high: 0, medium: 1, low: 2 };
-        if (a.priority !== b.priority) return priorityMap[a.priority] - priorityMap[b.priority];
+        const pm = { high: 0, medium: 1, low: 2 };
+        if (a.priority !== b.priority) return pm[a.priority] - pm[b.priority];
         return b.createdAt - a.createdAt;
       });
   }, [tasks, filter, searchQuery]);
- 
+
   const stats = useMemo(() => {
     const total = tasks.length;
     const completed = tasks.filter(t => t.completed).length;
     return { total, completed, active: total - completed };
   }, [tasks]);
- 
+
   const inputClass = "w-full px-5 py-3 bg-slate-100 dark:bg-slate-800 border-transparent focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 rounded-2xl text-sm outline-none transition-all font-medium text-slate-700 dark:text-slate-200";
- 
-  const MessageBlock = () => (
+
+  const MessageBlock = ({ error, message }: { error: string; message: string }) => (
     <>
-      {authError && <motion.p initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="text-rose-500 text-xs font-bold ml-1">{authError}</motion.p>}
-      {authMessage && <motion.p initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="text-emerald-500 text-xs font-bold ml-1">{authMessage}</motion.p>}
+      {error && <motion.p initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="text-rose-500 text-xs font-bold ml-1">{error}</motion.p>}
+      {message && <motion.p initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="text-emerald-500 text-xs font-bold ml-1">{message}</motion.p>}
     </>
   );
- 
+
   const getTitle = () => {
     if (authScreen === "role") return "Welcome Back";
     if (authScreen === "login") return `${selectedRole === "admin" ? "Admin" : "User"} Login`;
@@ -288,7 +287,7 @@ export default function App() {
     if (authScreen === "verify") return "Enter Reset Code";
     return "";
   };
- 
+
   const getSubtitle = () => {
     if (authScreen === "role") return "Please select your login type";
     if (authScreen === "login") return "Enter your credentials";
@@ -297,7 +296,7 @@ export default function App() {
     if (authScreen === "verify") return "Check your email for the 6-digit code";
     return "";
   };
- 
+
   if (!user) {
     return (
       <div className={`min-h-screen flex items-center justify-center p-4 bg-slate-50 dark:bg-slate-950 transition-colors duration-300 ${isDarkMode ? "dark" : ""}`}>
@@ -309,46 +308,32 @@ export default function App() {
             <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-2">{getTitle()}</h1>
             <p className="text-slate-500 dark:text-slate-400 font-medium">{getSubtitle()}</p>
           </div>
- 
-          {/* Role Selection */}
+
           {authScreen === "role" && (
             <div className="space-y-4">
               <button onClick={() => handleRoleSelect("admin")} className="w-full flex items-center justify-between p-5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl transition-all group shadow-lg shadow-indigo-200 dark:shadow-none">
                 <div className="flex items-center gap-4">
                   <div className="p-2 bg-indigo-500 rounded-xl"><ShieldCheck className="w-6 h-6" /></div>
-                  <div className="text-left">
-                    <div className="font-bold">Admin Login</div>
-                    <div className="text-xs text-indigo-100">Full access to all features</div>
-                  </div>
+                  <div className="text-left"><div className="font-bold">Admin Login</div><div className="text-xs text-indigo-100">Full access to all features</div></div>
                 </div>
                 <LogIn className="w-5 h-5 opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>
               <button onClick={() => handleRoleSelect("user")} className="w-full flex items-center justify-between p-5 bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 hover:border-indigo-500 text-slate-700 dark:text-slate-200 rounded-2xl transition-all group">
                 <div className="flex items-center gap-4">
                   <div className="p-2 bg-slate-100 dark:bg-slate-700 rounded-xl"><UserIcon className="w-6 h-6" /></div>
-                  <div className="text-left">
-                    <div className="font-bold">User Login</div>
-                    <div className="text-xs text-slate-400">Manage your personal tasks</div>
-                  </div>
+                  <div className="text-left"><div className="font-bold">User Login</div><div className="text-xs text-slate-400">Manage your personal tasks</div></div>
                 </div>
                 <LogIn className="w-5 h-5 opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>
               {authMessage && <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-emerald-500 text-xs font-bold text-center">{authMessage}</motion.p>}
             </div>
           )}
- 
-          {/* Login */}
+
           {authScreen === "login" && (
             <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">Username</label>
-                <input type="text" required value={loginUsername} onChange={e => setLoginUsername(e.target.value)} className={inputClass} placeholder={selectedRole === "admin" ? "admin" : "user"} />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">Password</label>
-                <input type="password" required value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className={inputClass} placeholder="••••••••" />
-              </div>
-              <MessageBlock />
+              <div><label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">Username</label><input type="text" required value={loginUsername} onChange={e => setLoginUsername(e.target.value)} className={inputClass} placeholder={selectedRole === "admin" ? "admin" : "user"} /></div>
+              <div><label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">Password</label><input type="password" required value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className={inputClass} placeholder="••••••••" /></div>
+              <MessageBlock error={authError} message={authMessage} />
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => { setAuthScreen("role"); resetAuthForm(); }} className="flex-1 px-5 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold rounded-2xl hover:bg-slate-200 transition-all">Back</button>
                 <button type="submit" className="flex-[2] px-5 py-3 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-all">Sign In</button>
@@ -359,64 +344,43 @@ export default function App() {
               </div>
             </form>
           )}
- 
-          {/* Register */}
+
           {authScreen === "register" && (
             <form onSubmit={handleRegister} className="space-y-4">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">Username</label>
-                <input type="text" required value={loginUsername} onChange={e => setLoginUsername(e.target.value)} className={inputClass} placeholder="Choose a username" />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">Email</label>
-                <input type="email" required value={loginEmail} onChange={e => setLoginEmail(e.target.value)} className={inputClass} placeholder="your@email.com" />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">Password</label>
-                <input type="password" required value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className={inputClass} placeholder="Min 6 characters" />
-              </div>
-              <MessageBlock />
+              <div><label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">Username</label><input type="text" required value={loginUsername} onChange={e => setLoginUsername(e.target.value)} className={inputClass} placeholder="Choose a username" /></div>
+              <div><label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">Email</label><input type="email" required value={loginEmail} onChange={e => setLoginEmail(e.target.value)} className={inputClass} placeholder="your@email.com" /></div>
+              <div><label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">Password</label><input type="password" required value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className={inputClass} placeholder="Min 6 characters" /></div>
+              <MessageBlock error={authError} message={authMessage} />
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => { setAuthScreen("login"); resetAuthForm(); }} className="flex-1 px-5 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold rounded-2xl hover:bg-slate-200 transition-all">Back</button>
                 <button type="submit" className="flex-[2] px-5 py-3 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-all">Sign Up</button>
               </div>
             </form>
           )}
- 
-          {/* Forgot Password */}
+
           {authScreen === "forgot" && (
             <form onSubmit={handleSendCode} className="space-y-4">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">Email</label>
-                <input type="email" required value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} className={inputClass} placeholder="your@email.com" />
-              </div>
-              <MessageBlock />
+              <div><label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">Email</label><input type="email" required value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} className={inputClass} placeholder="your@email.com" /></div>
+              <MessageBlock error={authError} message={authMessage} />
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => { setAuthScreen("role"); resetAuthForm(); }} className="flex-1 px-5 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold rounded-2xl hover:bg-slate-200 transition-all">Back</button>
                 <button type="submit" className="flex-[2] px-5 py-3 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-all">Send Code</button>
               </div>
             </form>
           )}
- 
-          {/* Verify Code & Reset */}
+
           {authScreen === "verify" && (
             <form onSubmit={handleResetPassword} className="space-y-4">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">6-Digit Code</label>
-                <input type="text" required maxLength={6} value={resetCode} onChange={e => setResetCode(e.target.value)} className={`${inputClass} text-center text-2xl tracking-[0.5em] font-bold`} placeholder="······" />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">New Password</label>
-                <input type="password" required value={newPassword} onChange={e => setNewPassword(e.target.value)} className={inputClass} placeholder="Min 6 characters" />
-              </div>
-              <MessageBlock />
+              <div><label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">6-Digit Code</label><input type="text" required maxLength={6} value={resetCode} onChange={e => setResetCode(e.target.value)} className={`${inputClass} text-center text-2xl tracking-[0.5em] font-bold`} placeholder="······" /></div>
+              <div><label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">New Password</label><input type="password" required value={newPassword} onChange={e => setNewPassword(e.target.value)} className={inputClass} placeholder="Min 6 characters" /></div>
+              <MessageBlock error={authError} message={authMessage} />
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => { setAuthScreen("forgot"); setAuthError(""); setAuthMessage(""); }} className="flex-1 px-5 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold rounded-2xl hover:bg-slate-200 transition-all">Back</button>
                 <button type="submit" className="flex-[2] px-5 py-3 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-all">Reset Password</button>
               </div>
             </form>
           )}
- 
+
           <div className="mt-8 text-center">
             <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-3 text-slate-400 hover:text-indigo-500 transition-colors">
               {isDarkMode ? <Sun className="w-6 h-6" /> : <Moon className="w-6 h-6" />}
@@ -426,9 +390,77 @@ export default function App() {
       </div>
     );
   }
- 
+
   return (
     <div className={`min-h-screen py-8 px-4 sm:px-6 lg:px-8 bg-slate-50 dark:bg-slate-950 transition-colors duration-300 ${isDarkMode ? "dark" : ""}`}>
+      
+      {/* Profile Modal */}
+      <AnimatePresence>
+        {showProfile && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-white dark:bg-slate-900 rounded-[2rem] p-8 w-full max-w-md shadow-2xl border border-slate-100 dark:border-slate-800">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center">
+                    <UserIcon className="w-6 h-6 text-indigo-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-extrabold text-slate-900 dark:text-white">{user.username}</h2>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{user.role}</p>
+                  </div>
+                </div>
+                <button onClick={() => { setShowProfile(false); setProfileError(""); setProfileMessage(""); }} className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Tabs */}
+              <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl mb-6">
+                <button onClick={() => { setProfileTab("email"); setProfileError(""); setProfileMessage(""); }} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-bold transition-all ${profileTab === "email" ? "bg-white dark:bg-slate-700 text-indigo-600 shadow-md" : "text-slate-500"}`}>
+                  <Mail className="w-4 h-4" /> Email
+                </button>
+                <button onClick={() => { setProfileTab("password"); setProfileError(""); setProfileMessage(""); }} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-bold transition-all ${profileTab === "password" ? "bg-white dark:bg-slate-700 text-indigo-600 shadow-md" : "text-slate-500"}`}>
+                  <Lock className="w-4 h-4" /> Password
+                </button>
+              </div>
+
+              {/* Email Tab */}
+              {profileTab === "email" && (
+                <form onSubmit={handleUpdateEmail} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">Email Address</label>
+                    <input type="email" required value={profileEmail} onChange={e => setProfileEmail(e.target.value)} className={inputClass} placeholder="your@email.com" />
+                    <p className="text-xs text-slate-400 mt-2 ml-1">This email is used for password recovery.</p>
+                  </div>
+                  <MessageBlock error={profileError} message={profileMessage} />
+                  <button type="submit" className="w-full px-5 py-3 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-all flex items-center justify-center gap-2">
+                    <Check className="w-4 h-4" /> Save Email
+                  </button>
+                </form>
+              )}
+
+              {/* Password Tab */}
+              {profileTab === "password" && (
+                <form onSubmit={handleChangePassword} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">Current Password</label>
+                    <input type="password" required value={profileCurrentPassword} onChange={e => setProfileCurrentPassword(e.target.value)} className={inputClass} placeholder="••••••••" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">New Password</label>
+                    <input type="password" required value={profileNewPassword} onChange={e => setProfileNewPassword(e.target.value)} className={inputClass} placeholder="Min 6 characters" />
+                  </div>
+                  <MessageBlock error={profileError} message={profileMessage} />
+                  <button type="submit" className="w-full px-5 py-3 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-all flex items-center justify-center gap-2">
+                    <Check className="w-4 h-4" /> Change Password
+                  </button>
+                </form>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="max-w-3xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
@@ -449,6 +481,9 @@ export default function App() {
                 <Sparkles className="w-3 h-3 animate-spin" />Syncing
               </div>
             )}
+            <button onClick={() => setShowProfile(true)} className="p-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 hover:text-indigo-500 hover:border-indigo-100 dark:hover:border-indigo-900 transition-all shadow-sm" title="Edit Profile">
+              <UserIcon className="w-5 h-5" />
+            </button>
             <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 hover:text-indigo-500 transition-all shadow-sm">
               {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
@@ -457,7 +492,7 @@ export default function App() {
             </button>
           </div>
         </div>
- 
+
         <div className="grid grid-cols-3 gap-4 mb-8">
           <motion.div whileHover={{ y: -4 }} className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm text-center">
             <div className="text-3xl font-bold text-slate-900 dark:text-white">{stats.total}</div>
@@ -472,7 +507,7 @@ export default function App() {
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Done</div>
           </motion.div>
         </div>
- 
+
         <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl shadow-slate-200/80 dark:shadow-none border border-slate-100 dark:border-slate-800 overflow-hidden">
           <div className="p-8 bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
             <form onSubmit={addTask} className="space-y-4">
@@ -500,7 +535,7 @@ export default function App() {
               </div>
             </form>
           </div>
- 
+
           <div className="px-8 py-5 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row gap-5 items-center justify-between">
             <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl w-full md:w-auto">
               {(["all", "active", "completed"] as FilterType[]).map(f => (
@@ -512,15 +547,11 @@ export default function App() {
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input type="text" placeholder="Search tasks..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-11 pr-4 py-2.5 bg-slate-100 dark:bg-slate-800 border-transparent focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 rounded-2xl text-sm outline-none transition-all font-medium text-slate-700 dark:text-slate-200" />
               </div>
-              {stats.completed > 0 && (
-                <button onClick={clearCompleted} className="p-2.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all flex-shrink-0"><Trash2 className="w-5 h-5" /></button>
-              )}
-              {user.role === "admin" && stats.active > 0 && (
-                <button onClick={bulkComplete} className="p-2.5 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-xl transition-all flex-shrink-0"><CheckCircle2 className="w-5 h-5" /></button>
-              )}
+              {stats.completed > 0 && <button onClick={clearCompleted} className="p-2.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all flex-shrink-0"><Trash2 className="w-5 h-5" /></button>}
+              {user.role === "admin" && stats.active > 0 && <button onClick={bulkComplete} className="p-2.5 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-xl transition-all flex-shrink-0"><CheckCircle2 className="w-5 h-5" /></button>}
             </div>
           </div>
- 
+
           <div className="max-h-[600px] overflow-y-auto p-8">
             <ul className="space-y-4">
               <AnimatePresence mode="popLayout">
@@ -559,7 +590,7 @@ export default function App() {
               </AnimatePresence>
             </ul>
           </div>
- 
+
           <div className="px-8 py-6 bg-slate-50/50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
             <p className="text-[10px] font-extrabold text-slate-400 dark:text-slate-600 uppercase tracking-[0.3em]">Task Master Pro</p>
             <div className="flex gap-4">
@@ -573,4 +604,3 @@ export default function App() {
     </div>
   );
 }
- 
