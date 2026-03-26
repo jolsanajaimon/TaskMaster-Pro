@@ -152,7 +152,10 @@ export default function App() {
       });
       const data = await res.json();
       if (res.ok) {
-        setUser(data);
+        setIsRegistering(false);
+        setLoginError("Account created! Please sign in.");
+        setLoginUsername("");
+        setLoginPassword("");
       } else {
         setLoginError(data.error || "Registration failed");
       }
