@@ -4,7 +4,6 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import bcrypt from "bcrypt";
 import mongoose, { Schema, Document } from "mongoose";
-import nodemailer from "nodemailer";
  
 // --- MongoDB Connection ---
 mongoose.connect(process.env.MONGODB_URI || "")
@@ -52,16 +51,29 @@ const UserSchema = new Schema<IUser>({
  
 const User = mongoose.model<IUser>("User", UserSchema);
  
-// --- Brevo SMTP Setup ---
-const transporter = nodemailer.createTransport({
-  host: "smtp-relay.brevo.com",
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.BREVO_SMTP_USER,
-    pass: process.env.BREVO_SMTP_PASS,
-  },
-});
+// --- Brevo HTTP API ---
+async function sendEmail(to: string, subject: string, html: string) {
+  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "api-key": process.env.BREVO_API_KEY || "",
+    },
+    body: JSON.stringify({
+      sender: { name: "TaskMaster Pro", email: "jolsana2002@gmail.com" },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+    }),
+  });
+ 
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(JSON.stringify(error));
+  }
+ 
+  return response.json();
+}
  
 // --- Seed default users ---
 async function seedDefaultUsers() {
@@ -134,11 +146,10 @@ async function startServer() {
       resetCodeExpiry: expiry,
     });
  
-    await transporter.sendMail({
-      from: `"TaskMaster Pro" <${process.env.BREVO_SMTP_USER}>`,
-      to: email,
-      subject: "TaskMaster Pro — Your Reset Code",
-      html: `
+    await sendEmail(
+      email,
+      "TaskMaster Pro — Your Reset Code",
+      `
         <div style="font-family: sans-serif; max-width: 400px; margin: auto; padding: 2rem; border: 1px solid #e2e8f0; border-radius: 16px;">
           <h2 style="color: #4f46e5;">Reset Your Password</h2>
           <p>Use the code below to reset your password. This code expires in <strong>10 minutes</strong>.</p>
@@ -147,8 +158,8 @@ async function startServer() {
           </div>
           <p style="color: #94a3b8; font-size: 12px;">If you didn't request this, ignore this email.</p>
         </div>
-      `,
-    });
+      `
+    );
  
     res.json({ success: true, message: "Reset code sent to your email" });
   });
@@ -253,4 +264,3 @@ async function startServer() {
 }
  
 startServer();
- 
