@@ -137,7 +137,11 @@ async function startServer() {
  
   app.listen(PORT, "0.0.0.0", async () => {
     console.log(`Server running on http://localhost:${PORT}`);
-    await seedDefaultUsers();
+    try {
+      await seedDefaultUsers();
+    } catch (err) {
+      console.error("Seed error:", err);
+    }
   });
 }
  
