@@ -4,7 +4,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import bcrypt from "bcrypt";
 import mongoose, { Schema, Document } from "mongoose";
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 import crypto from "crypto";
  
 // --- MongoDB Connection ---
@@ -54,15 +54,7 @@ const UserSchema = new Schema<IUser>({
 const User = mongoose.model<IUser>("User", UserSchema);
  
 // --- Nodemailer Setup ---
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_APP_PASSWORD,
-  },
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
  
 // --- Seed default users ---
 async function seedDefaultUsers() {
@@ -137,8 +129,8 @@ async function startServer() {
  
     const resetUrl = `${process.env.APP_URL}/reset-password?token=${token}`;
  
-    await transporter.sendMail({
-      from: process.env.GMAIL_USER,
+    await resend.emails.send({
+      from: "onboarding@resend.dev",
       to: email,
       subject: "TaskMaster Pro — Password Reset",
       html: `
