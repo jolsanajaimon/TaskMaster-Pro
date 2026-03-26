@@ -4,11 +4,11 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import bcrypt from "bcrypt";
 import mongoose, { Schema, Document } from "mongoose";
+import nodemailer from "nodemailer";
+import crypto from "crypto";
  
 // --- MongoDB Connection ---
-const MONGODB_URI = process.env.MONGODB_URI || "";
- 
-mongoose.connect(MONGODB_URI)
+mongoose.connect(process.env.MONGODB_URI || "")
   .then(() => console.log("Connected to MongoDB"))
   .catch((err) => console.error("MongoDB connection error:", err));
  
@@ -26,6 +26,9 @@ interface IUser extends Document {
   username: string;
   password: string;
   role: "user" | "admin";
+  email: string;
+  resetToken?: string;
+  resetTokenExpiry?: number;
   tasks: ITask[];
 }
  
@@ -42,10 +45,22 @@ const UserSchema = new Schema<IUser>({
   username: { type: String, unique: true, required: true },
   password: { type: String, required: true },
   role: { type: String, enum: ["user", "admin"], required: true },
+  email: { type: String, default: "" },
+  resetToken: { type: String },
+  resetTokenExpiry: { type: Number },
   tasks: [TaskSchema],
 });
  
 const User = mongoose.model<IUser>("User", UserSchema);
+ 
+// --- Nodemailer Setup ---
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD,
+  },
+});
  
 // --- Seed default users ---
 async function seedDefaultUsers() {
@@ -55,6 +70,7 @@ async function seedDefaultUsers() {
       username: "admin",
       password: await bcrypt.hash(process.env.ADMIN_PASSWORD || "admin123", 10),
       role: "admin",
+      email: "",
       tasks: [],
     });
     console.log("Default admin user created");
@@ -66,6 +82,7 @@ async function seedDefaultUsers() {
       username: "user",
       password: await bcrypt.hash(process.env.USER_PASSWORD || "user123", 10),
       role: "user",
+      email: "",
       tasks: [],
     });
     console.log("Default user created");
@@ -80,13 +97,13 @@ async function startServer() {
  
   // Auth: Register
   app.post("/api/auth/register", async (req, res) => {
-    const { username, password, role } = req.body;
+    const { username, password, role, email } = req.body;
     const existing = await User.findOne({ username });
     if (existing) {
       return res.status(400).json({ error: "Username already exists" });
     }
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = await User.create({ username, password: hashedPassword, role, tasks: [] });
+    const newUser = await User.create({ username, password: hashedPassword, role, email: email || "", tasks: [] });
     res.json({ username: newUser.username, role: newUser.role });
   });
  
@@ -98,6 +115,63 @@ async function startServer() {
       return res.status(401).json({ error: "Invalid credentials" });
     }
     res.json({ username: user.username, role: user.role });
+  });
+ 
+  // Auth: Forgot Password
+  app.post("/api/auth/forgot-password", async (req, res) => {
+    const { email } = req.body;
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ error: "No account found with this email" });
+    }
+ 
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiry = Date.now() + 3600000; // 1 hour
+ 
+    await User.findByIdAndUpdate(user._id, {
+      resetToken: token,
+      resetTokenExpiry: expiry,
+    });
+ 
+    const resetUrl = `${process.env.APP_URL}/reset-password?token=${token}`;
+ 
+    await transporter.sendMail({
+      from: process.env.GMAIL_USER,
+      to: email,
+      subject: "TaskMaster Pro — Password Reset",
+      html: `
+        <div style="font-family: sans-serif; max-width: 400px; margin: auto; padding: 2rem; border: 1px solid #e2e8f0; border-radius: 16px;">
+          <h2 style="color: #4f46e5;">Reset Your Password</h2>
+          <p>Click the button below to reset your password. This link expires in 1 hour.</p>
+          <a href="${resetUrl}" style="display: inline-block; padding: 12px 24px; background: #4f46e5; color: white; border-radius: 8px; text-decoration: none; font-weight: bold;">Reset Password</a>
+          <p style="color: #94a3b8; font-size: 12px; margin-top: 1rem;">If you didn't request this, ignore this email.</p>
+        </div>
+      `,
+    });
+ 
+    res.json({ success: true, message: "Reset link sent to your email" });
+  });
+ 
+  // Auth: Reset Password
+  app.post("/api/auth/reset-password", async (req, res) => {
+    const { token, password } = req.body;
+    const user = await User.findOne({
+      resetToken: token,
+      resetTokenExpiry: { $gt: Date.now() },
+    });
+ 
+    if (!user) {
+      return res.status(400).json({ error: "Invalid or expired reset link" });
+    }
+ 
+    const hashedPassword = await bcrypt.hash(password, 10);
+    await User.findByIdAndUpdate(user._id, {
+      password: hashedPassword,
+      resetToken: undefined,
+      resetTokenExpiry: undefined,
+    });
+ 
+    res.json({ success: true, message: "Password reset successfully" });
   });
  
   // Tasks: Get
