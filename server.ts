@@ -133,6 +133,9 @@ async function startServer() {
       from: "onboarding@resend.dev",
       to: email,
       subject: "TaskMaster Pro — Password Reset",
+      headers: {
+        "X-Entity-Ref-ID": crypto.randomUUID(),
+      },
       html: `
         <div style="font-family: sans-serif; max-width: 400px; margin: auto; padding: 2rem; border: 1px solid #e2e8f0; border-radius: 16px;">
           <h2 style="color: #4f46e5;">Reset Your Password</h2>
