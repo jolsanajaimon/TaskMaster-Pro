@@ -1,8 +1,9 @@
-import React, { useState, useMemo, useEffect } from "react";
-import { 
-  Plus, Trash2, CheckCircle2, Circle, ListTodo, Search, Filter, 
-  Calendar, Tag, AlertCircle, Sparkles, Moon, Sun, LogOut, ShieldCheck, 
-  User as UserIcon, LogIn, X, Mail, Lock, Check
+import React, { useState, useMemo, useEffect, useCallback } from "react";
+import {
+  Plus, Trash2, CheckCircle2, Circle, ListTodo, Search, Filter,
+  Calendar, Tag, AlertCircle, Sparkles, Moon, Sun, LogOut, ShieldCheck,
+  User as UserIcon, LogIn, X, Mail, Lock, Check, Users, ClipboardList,
+  RotateCcw, ChevronRight, ArrowLeft, BarChart2
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -13,11 +14,21 @@ interface Task {
   createdAt: number;
   priority: "low" | "medium" | "high";
   category: string;
+  assignedBy?: string;
+}
+
+interface UserStat {
+  username: string;
+  email: string;
+  totalTasks: number;
+  completedTasks: number;
+  activeTasks: number;
 }
 
 type FilterType = "all" | "active" | "completed";
 type UserRole = "user" | "admin" | null;
 type AuthScreen = "role" | "login" | "register" | "forgot" | "verify";
+type AdminView = "dashboard" | "userTasks" | "assignTask" | "resetPassword";
 
 interface AuthUser {
   username: string;
@@ -50,7 +61,7 @@ export default function App() {
   const [authError, setAuthError] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Profile modal state
+  // Profile modal
   const [showProfile, setShowProfile] = useState(false);
   const [profileEmail, setProfileEmail] = useState("");
   const [profileCurrentPassword, setProfileCurrentPassword] = useState("");
@@ -59,11 +70,24 @@ export default function App() {
   const [profileError, setProfileError] = useState("");
   const [profileTab, setProfileTab] = useState<"email" | "password">("email");
 
+  // Admin state
+  const [adminView, setAdminView] = useState<AdminView>("dashboard");
+  const [allUsers, setAllUsers] = useState<UserStat[]>([]);
+  const [selectedUser, setSelectedUser] = useState<UserStat | null>(null);
+  const [selectedUserTasks, setSelectedUserTasks] = useState<Task[]>([]);
+  const [assignText, setAssignText] = useState("");
+  const [assignPriority, setAssignPriority] = useState<Task["priority"]>("medium");
+  const [assignCategory, setAssignCategory] = useState("Work");
+  const [adminResetPassword, setAdminResetPassword] = useState("");
+  const [adminMessage, setAdminMessage] = useState("");
+  const [adminError, setAdminError] = useState("");
+
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem("taskmaster_theme");
     return saved === "dark";
   });
 
+  // User task state
   const [tasks, setTasks] = useState<Task[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [priority, setPriority] = useState<Task["priority"]>("medium");
@@ -71,14 +95,25 @@ export default function App() {
   const [filter, setFilter] = useState<FilterType>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
+  const fetchAllUsers = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/users");
+      const data = await res.json();
+      if (Array.isArray(data)) setAllUsers(data);
+    } catch (err) {
+      console.error("Failed to fetch users:", err);
+    }
+  }, []);
+
   useEffect(() => {
-    if (user) {
+    if (user?.role === "admin") {
+      fetchAllUsers();
+    } else if (user?.role === "user") {
       fetch(`/api/tasks?username=${user.username}`)
         .then(res => res.json())
         .then(data => { if (Array.isArray(data)) setTasks(data); })
         .catch(err => console.error("Failed to fetch tasks:", err));
-      
-      // Load profile email
+
       fetch(`/api/profile?username=${user.username}`)
         .then(res => res.json())
         .then(data => {
@@ -86,13 +121,11 @@ export default function App() {
           setUser(prev => prev ? { ...prev, email: data.email } : prev);
         })
         .catch(() => {});
-    } else {
-      setTasks([]);
     }
-  }, [user?.username]);
+  }, [user?.username, user?.role]);
 
   useEffect(() => {
-    if (user && tasks.length > 0) {
+    if (user?.role === "user" && tasks.length > 0) {
       setIsSyncing(true);
       const timer = setTimeout(() => {
         fetch("/api/tasks/sync", {
@@ -204,10 +237,8 @@ export default function App() {
         body: JSON.stringify({ username: user?.username, email: profileEmail })
       });
       const data = await res.json();
-      if (res.ok) {
-        setProfileMessage("Email updated successfully!");
-        setUser(prev => prev ? { ...prev, email: profileEmail } : prev);
-      } else setProfileError(data.error || "Failed to update email");
+      if (res.ok) { setProfileMessage("Email updated successfully!"); setUser(prev => prev ? { ...prev, email: profileEmail } : prev); }
+      else setProfileError(data.error || "Failed to update email");
     } catch { setProfileError("Server connection failed"); }
   };
 
@@ -222,15 +253,71 @@ export default function App() {
         body: JSON.stringify({ username: user?.username, currentPassword: profileCurrentPassword, newPassword: profileNewPassword })
       });
       const data = await res.json();
-      if (res.ok) {
-        setProfileMessage("Password changed successfully!");
-        setProfileCurrentPassword(""); setProfileNewPassword("");
-      } else setProfileError(data.error || "Failed to change password");
+      if (res.ok) { setProfileMessage("Password changed successfully!"); setProfileCurrentPassword(""); setProfileNewPassword(""); }
+      else setProfileError(data.error || "Failed to change password");
     } catch { setProfileError("Server connection failed"); }
+  };
+
+  const handleViewUserTasks = async (u: UserStat) => {
+    setSelectedUser(u);
+    setAdminView("userTasks");
+    setAdminMessage(""); setAdminError("");
+    try {
+      const res = await fetch(`/api/admin/users/${u.username}/tasks`);
+      const data = await res.json();
+      if (Array.isArray(data)) setSelectedUserTasks(data);
+    } catch { setAdminError("Failed to load tasks"); }
+  };
+
+  const handleAssignTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminError(""); setAdminMessage("");
+    try {
+      const res = await fetch(`/api/admin/users/${selectedUser?.username}/assign-task`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: assignText, priority: assignPriority, category: assignCategory, assignedBy: user?.username })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAdminMessage(`Task assigned to ${selectedUser?.username}!`);
+        setAssignText("");
+        fetchAllUsers();
+        if (selectedUser) handleViewUserTasks(selectedUser);
+        setAdminView("userTasks");
+      } else setAdminError(data.error || "Failed to assign task");
+    } catch { setAdminError("Server connection failed"); }
+  };
+
+  const handleDeleteUser = async (username: string) => {
+    if (!confirm(`Delete user "${username}"? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`/api/admin/users/${username}`, { method: "DELETE" });
+      const data = await res.json();
+      if (res.ok) { fetchAllUsers(); setAdminMessage(`User ${username} deleted.`); }
+      else setAdminError(data.error || "Failed to delete user");
+    } catch { setAdminError("Server connection failed"); }
+  };
+
+  const handleAdminResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminError(""); setAdminMessage("");
+    if (adminResetPassword.length < 6) { setAdminError("Password must be at least 6 characters"); return; }
+    try {
+      const res = await fetch(`/api/admin/users/${selectedUser?.username}/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPassword: adminResetPassword })
+      });
+      const data = await res.json();
+      if (res.ok) { setAdminMessage(`Password reset for ${selectedUser?.username}!`); setAdminResetPassword(""); setAdminView("userTasks"); }
+      else setAdminError(data.error || "Failed to reset password");
+    } catch { setAdminError("Server connection failed"); }
   };
 
   const handleLogout = () => {
     setUser(null); setAuthScreen("role"); setSelectedRole(null); resetAuthForm();
+    setAdminView("dashboard"); setAllUsers([]); setSelectedUser(null);
   };
 
   const addTask = (e?: React.FormEvent) => {
@@ -242,14 +329,10 @@ export default function App() {
   };
 
   const toggleTask = (id: string) => setTasks(tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
-
   const deleteTask = (id: string) => {
     const task = tasks.find(t => t.id === id);
-    if (!task) return;
-    if (user?.role === "admin" || task.completed) setTasks(tasks.filter(t => t.id !== id));
+    if (task?.completed) setTasks(tasks.filter(t => t.id !== id));
   };
-
-  const bulkComplete = () => { if (user?.role === "admin") setTasks(tasks.map(t => ({ ...t, completed: true }))); };
   const clearCompleted = () => setTasks(tasks.filter(t => !t.completed));
 
   const filteredTasks = useMemo(() => {
@@ -297,6 +380,7 @@ export default function App() {
     return "";
   };
 
+  // --- Auth Screen ---
   if (!user) {
     return (
       <div className={`min-h-screen flex items-center justify-center p-4 bg-slate-50 dark:bg-slate-950 transition-colors duration-300 ${isDarkMode ? "dark" : ""}`}>
@@ -314,7 +398,7 @@ export default function App() {
               <button onClick={() => handleRoleSelect("admin")} className="w-full flex items-center justify-between p-5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl transition-all group shadow-lg shadow-indigo-200 dark:shadow-none">
                 <div className="flex items-center gap-4">
                   <div className="p-2 bg-indigo-500 rounded-xl"><ShieldCheck className="w-6 h-6" /></div>
-                  <div className="text-left"><div className="font-bold">Admin Login</div><div className="text-xs text-indigo-100">Full access to all features</div></div>
+                  <div className="text-left"><div className="font-bold">Admin Login</div><div className="text-xs text-indigo-100">Manage users and assign tasks</div></div>
                 </div>
                 <LogIn className="w-5 h-5 opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>
@@ -391,9 +475,262 @@ export default function App() {
     );
   }
 
+  // --- Shared Header ---
+  const Header = () => (
+    <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center gap-4">
+        <div className="p-2 bg-indigo-600 rounded-xl shadow-lg shadow-indigo-200 dark:shadow-none">
+          <ListTodo className="w-6 h-6 text-white" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">Task Master <span className="text-indigo-600">Pro</span></h1>
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest">
+            {user.role === "admin" ? <ShieldCheck className="w-3 h-3 text-indigo-500" /> : <UserIcon className="w-3 h-3 text-slate-400" />}
+            {user.username}
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        {isSyncing && (
+          <div className="flex items-center gap-1 text-[10px] font-bold text-indigo-500 uppercase tracking-widest bg-indigo-50 dark:bg-indigo-900/20 px-2 py-1 rounded-lg">
+            <Sparkles className="w-3 h-3 animate-spin" />Syncing
+          </div>
+        )}
+        {user.role === "user" && (
+          <button onClick={() => setShowProfile(true)} className="p-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 hover:text-indigo-500 transition-all shadow-sm">
+            <UserIcon className="w-5 h-5" />
+          </button>
+        )}
+        <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 hover:text-indigo-500 transition-all shadow-sm">
+          {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+        </button>
+        <button onClick={handleLogout} className="p-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 hover:text-rose-500 transition-all shadow-sm">
+          <LogOut className="w-5 h-5" />
+        </button>
+      </div>
+    </div>
+  );
+
+  // --- Admin Dashboard ---
+  if (user.role === "admin") {
+    return (
+      <div className={`min-h-screen py-8 px-4 sm:px-6 lg:px-8 bg-slate-50 dark:bg-slate-950 transition-colors duration-300 ${isDarkMode ? "dark" : ""}`}>
+        <div className="max-w-4xl mx-auto">
+          <Header />
+
+          {/* Admin Stats */}
+          {adminView === "dashboard" && (
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+              <div className="grid grid-cols-3 gap-4 mb-8">
+                <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm text-center">
+                  <div className="text-3xl font-bold text-slate-900 dark:text-white">{allUsers.length}</div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Users</div>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm text-center">
+                  <div className="text-3xl font-bold text-indigo-600">{allUsers.reduce((s, u) => s + u.activeTasks, 0)}</div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Active Tasks</div>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm text-center">
+                  <div className="text-3xl font-bold text-emerald-600">{allUsers.reduce((s, u) => s + u.completedTasks, 0)}</div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Completed</div>
+                </div>
+              </div>
+
+              {adminMessage && <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-emerald-500 text-sm font-bold mb-4 text-center">{adminMessage}</motion.p>}
+              {adminError && <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-rose-500 text-sm font-bold mb-4 text-center">{adminError}</motion.p>}
+
+              <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl shadow-slate-200/80 dark:shadow-none border border-slate-100 dark:border-slate-800 overflow-hidden">
+                <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Users className="w-5 h-5 text-indigo-600" />
+                    <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">All Users</h2>
+                  </div>
+                  <button onClick={fetchAllUsers} className="p-2 text-slate-400 hover:text-indigo-500 transition-colors">
+                    <RotateCcw className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {allUsers.length === 0 ? (
+                  <div className="py-20 text-center">
+                    <Users className="w-12 h-12 text-slate-200 dark:text-slate-700 mx-auto mb-4" />
+                    <p className="text-slate-400 font-medium">No users registered yet</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {allUsers.map(u => (
+                      <div key={u.username} className="flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center">
+                            <span className="text-indigo-600 font-bold text-sm">{u.username[0].toUpperCase()}</span>
+                          </div>
+                          <div>
+                            <div className="font-bold text-slate-900 dark:text-white">{u.username}</div>
+                            <div className="text-xs text-slate-400">{u.email || "No email set"}</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-6">
+                          <div className="text-center hidden sm:block">
+                            <div className="text-lg font-bold text-slate-900 dark:text-white">{u.totalTasks}</div>
+                            <div className="text-[10px] text-slate-400 uppercase tracking-wider">Total</div>
+                          </div>
+                          <div className="text-center hidden sm:block">
+                            <div className="text-lg font-bold text-indigo-600">{u.activeTasks}</div>
+                            <div className="text-[10px] text-slate-400 uppercase tracking-wider">Active</div>
+                          </div>
+                          <div className="text-center hidden sm:block">
+                            <div className="text-lg font-bold text-emerald-600">{u.completedTasks}</div>
+                            <div className="text-[10px] text-slate-400 uppercase tracking-wider">Done</div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => handleViewUserTasks(u)} className="p-2 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 rounded-xl hover:bg-indigo-100 transition-colors" title="View tasks">
+                              <ClipboardList className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => handleDeleteUser(u.username)} className="p-2 bg-rose-50 dark:bg-rose-900/20 text-rose-500 rounded-xl hover:bg-rose-100 transition-colors" title="Delete user">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+
+          {/* User Tasks View */}
+          {adminView === "userTasks" && selectedUser && (
+            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+              <button onClick={() => { setAdminView("dashboard"); setAdminMessage(""); setAdminError(""); }} className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 transition-colors mb-6 font-bold">
+                <ArrowLeft className="w-4 h-4" /> Back to Users
+              </button>
+
+              <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl shadow-slate-200/80 dark:shadow-none border border-slate-100 dark:border-slate-800 overflow-hidden mb-6">
+                <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center">
+                      <span className="text-indigo-600 font-bold">{selectedUser.username[0].toUpperCase()}</span>
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">{selectedUser.username}'s Tasks</h2>
+                      <p className="text-xs text-slate-400">{selectedUser.email || "No email"}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => { setAdminView("assignTask"); setAdminMessage(""); setAdminError(""); }} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-colors">
+                      <Plus className="w-4 h-4" /> Assign Task
+                    </button>
+                    <button onClick={() => { setAdminView("resetPassword"); setAdminMessage(""); setAdminError(""); }} className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-xl text-sm font-bold hover:bg-amber-600 transition-colors">
+                      <RotateCcw className="w-4 h-4" /> Reset Password
+                    </button>
+                  </div>
+                </div>
+
+                {adminMessage && <div className="px-6 py-3 bg-emerald-50 dark:bg-emerald-900/20"><p className="text-emerald-600 text-sm font-bold">{adminMessage}</p></div>}
+                {adminError && <div className="px-6 py-3 bg-rose-50 dark:bg-rose-900/20"><p className="text-rose-500 text-sm font-bold">{adminError}</p></div>}
+
+                <div className="max-h-[500px] overflow-y-auto p-6">
+                  {selectedUserTasks.length === 0 ? (
+                    <div className="py-12 text-center">
+                      <ClipboardList className="w-12 h-12 text-slate-200 dark:text-slate-700 mx-auto mb-3" />
+                      <p className="text-slate-400">No tasks yet</p>
+                    </div>
+                  ) : (
+                    <ul className="space-y-3">
+                      {selectedUserTasks.map(t => {
+                        const ps = PRIORITIES.find(p => p.value === t.priority);
+                        return (
+                          <li key={t.id} className={`flex items-center gap-4 p-4 rounded-2xl border-2 ${t.completed ? "bg-slate-50/50 dark:bg-slate-800/30 border-slate-100 dark:border-slate-800" : "bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800"}`}>
+                            <div className={t.completed ? "text-emerald-500" : "text-slate-300"}>
+                              {t.completed ? <CheckCircle2 className="w-6 h-6" /> : <Circle className="w-6 h-6" />}
+                            </div>
+                            <div className="flex-grow min-w-0">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${ps?.color}`}>{ps?.label}</span>
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500 border border-indigo-100 dark:border-indigo-800">{t.category}</span>
+                                {t.assignedBy && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-900/20 text-amber-600 border border-amber-100 dark:border-amber-800">Assigned by {t.assignedBy}</span>}
+                              </div>
+                              <span className={`text-sm font-semibold ${t.completed ? "text-slate-400 line-through" : "text-slate-700 dark:text-slate-200"}`}>{t.text}</span>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Assign Task View */}
+          {adminView === "assignTask" && selectedUser && (
+            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+              <button onClick={() => { setAdminView("userTasks"); setAdminMessage(""); setAdminError(""); }} className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 transition-colors mb-6 font-bold">
+                <ArrowLeft className="w-4 h-4" /> Back
+              </button>
+              <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl shadow-slate-200/80 dark:shadow-none border border-slate-100 dark:border-slate-800 p-8">
+                <h2 className="text-xl font-extrabold text-slate-900 dark:text-white mb-6">Assign Task to {selectedUser.username}</h2>
+                <form onSubmit={handleAssignTask} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">Task Description</label>
+                    <input type="text" required value={assignText} onChange={e => setAssignText(e.target.value)} className={inputClass} placeholder="Enter task description..." />
+                  </div>
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">Priority</label>
+                      <select value={assignPriority} onChange={e => setAssignPriority(e.target.value as any)} className={inputClass}>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                      </select>
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">Category</label>
+                      <select value={assignCategory} onChange={e => setAssignCategory(e.target.value)} className={inputClass}>
+                        {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <MessageBlock error={adminError} message={adminMessage} />
+                  <button type="submit" className="w-full px-5 py-3 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-all">
+                    Assign Task
+                  </button>
+                </form>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Reset Password View */}
+          {adminView === "resetPassword" && selectedUser && (
+            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+              <button onClick={() => { setAdminView("userTasks"); setAdminMessage(""); setAdminError(""); }} className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 transition-colors mb-6 font-bold">
+                <ArrowLeft className="w-4 h-4" /> Back
+              </button>
+              <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl shadow-slate-200/80 dark:shadow-none border border-slate-100 dark:border-slate-800 p-8">
+                <h2 className="text-xl font-extrabold text-slate-900 dark:text-white mb-2">Reset Password</h2>
+                <p className="text-slate-400 text-sm mb-6">Set a new password for <strong>{selectedUser.username}</strong></p>
+                <form onSubmit={handleAdminResetPassword} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">New Password</label>
+                    <input type="password" required value={adminResetPassword} onChange={e => setAdminResetPassword(e.target.value)} className={inputClass} placeholder="Min 6 characters" />
+                  </div>
+                  <MessageBlock error={adminError} message={adminMessage} />
+                  <button type="submit" className="w-full px-5 py-3 bg-amber-500 text-white font-bold rounded-2xl hover:bg-amber-600 transition-all">
+                    Reset Password
+                  </button>
+                </form>
+              </div>
+            </motion.div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // --- User App Screen ---
   return (
     <div className={`min-h-screen py-8 px-4 sm:px-6 lg:px-8 bg-slate-50 dark:bg-slate-950 transition-colors duration-300 ${isDarkMode ? "dark" : ""}`}>
-      
+
       {/* Profile Modal */}
       <AnimatePresence>
         {showProfile && (
@@ -409,12 +746,10 @@ export default function App() {
                     <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{user.role}</p>
                   </div>
                 </div>
-                <button onClick={() => { setShowProfile(false); setProfileError(""); setProfileMessage(""); }} className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+                <button onClick={() => { setShowProfile(false); setProfileError(""); setProfileMessage(""); }} className="p-2 text-slate-400 hover:text-slate-600 transition-colors">
                   <X className="w-5 h-5" />
                 </button>
               </div>
-
-              {/* Tabs */}
               <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl mb-6">
                 <button onClick={() => { setProfileTab("email"); setProfileError(""); setProfileMessage(""); }} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-bold transition-all ${profileTab === "email" ? "bg-white dark:bg-slate-700 text-indigo-600 shadow-md" : "text-slate-500"}`}>
                   <Mail className="w-4 h-4" /> Email
@@ -423,14 +758,12 @@ export default function App() {
                   <Lock className="w-4 h-4" /> Password
                 </button>
               </div>
-
-              {/* Email Tab */}
               {profileTab === "email" && (
                 <form onSubmit={handleUpdateEmail} className="space-y-4">
                   <div>
                     <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">Email Address</label>
                     <input type="email" required value={profileEmail} onChange={e => setProfileEmail(e.target.value)} className={inputClass} placeholder="your@email.com" />
-                    <p className="text-xs text-slate-400 mt-2 ml-1">This email is used for password recovery.</p>
+                    <p className="text-xs text-slate-400 mt-2 ml-1">Used for password recovery.</p>
                   </div>
                   <MessageBlock error={profileError} message={profileMessage} />
                   <button type="submit" className="w-full px-5 py-3 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-all flex items-center justify-center gap-2">
@@ -438,8 +771,6 @@ export default function App() {
                   </button>
                 </form>
               )}
-
-              {/* Password Tab */}
               {profileTab === "password" && (
                 <form onSubmit={handleChangePassword} className="space-y-4">
                   <div>
@@ -462,36 +793,7 @@ export default function App() {
       </AnimatePresence>
 
       <div className="max-w-3xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-4">
-            <div className="p-2 bg-indigo-600 rounded-xl shadow-lg shadow-indigo-200 dark:shadow-none">
-              <ListTodo className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">Task Master <span className="text-indigo-600">Pro</span></h1>
-              <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest">
-                {user.role === "admin" ? <ShieldCheck className="w-3 h-3 text-indigo-500" /> : <UserIcon className="w-3 h-3 text-slate-400" />}
-                {user.username}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {isSyncing && (
-              <div className="flex items-center gap-1 text-[10px] font-bold text-indigo-500 uppercase tracking-widest bg-indigo-50 dark:bg-indigo-900/20 px-2 py-1 rounded-lg">
-                <Sparkles className="w-3 h-3 animate-spin" />Syncing
-              </div>
-            )}
-            <button onClick={() => setShowProfile(true)} className="p-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 hover:text-indigo-500 hover:border-indigo-100 dark:hover:border-indigo-900 transition-all shadow-sm" title="Edit Profile">
-              <UserIcon className="w-5 h-5" />
-            </button>
-            <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 hover:text-indigo-500 transition-all shadow-sm">
-              {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-            </button>
-            <button onClick={handleLogout} className="p-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 hover:text-rose-500 transition-all shadow-sm">
-              <LogOut className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
+        <Header />
 
         <div className="grid grid-cols-3 gap-4 mb-8">
           <motion.div whileHover={{ y: -4 }} className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm text-center">
@@ -548,7 +850,6 @@ export default function App() {
                 <input type="text" placeholder="Search tasks..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-11 pr-4 py-2.5 bg-slate-100 dark:bg-slate-800 border-transparent focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 rounded-2xl text-sm outline-none transition-all font-medium text-slate-700 dark:text-slate-200" />
               </div>
               {stats.completed > 0 && <button onClick={clearCompleted} className="p-2.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all flex-shrink-0"><Trash2 className="w-5 h-5" /></button>}
-              {user.role === "admin" && stats.active > 0 && <button onClick={bulkComplete} className="p-2.5 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-xl transition-all flex-shrink-0"><CheckCircle2 className="w-5 h-5" /></button>}
             </div>
           </div>
 
@@ -556,7 +857,7 @@ export default function App() {
             <ul className="space-y-4">
               <AnimatePresence mode="popLayout">
                 {filteredTasks.length > 0 ? filteredTasks.map(t => {
-                  const priorityStyle = PRIORITIES.find(p => p.value === t.priority);
+                  const ps = PRIORITIES.find(p => p.value === t.priority);
                   return (
                     <motion.li key={t.id} layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -40 }}
                       className={`group flex items-center gap-5 p-5 rounded-[1.5rem] border-2 transition-all ${t.completed ? "bg-slate-50/50 dark:bg-slate-800/30 border-slate-100 dark:border-slate-800" : "bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 hover:border-indigo-100 dark:hover:border-indigo-900 hover:shadow-xl hover:shadow-indigo-500/5"}`}>
@@ -565,13 +866,14 @@ export default function App() {
                       </button>
                       <div className="flex-grow min-w-0">
                         <div className="flex items-center gap-3 mb-1.5 flex-wrap">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${priorityStyle?.color}`}>{priorityStyle?.label}</span>
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${ps?.color}`}>{ps?.label}</span>
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800">{t.category}</span>
+                          {t.assignedBy && <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-900/20 text-amber-600 border border-amber-100 dark:border-amber-800">By {t.assignedBy}</span>}
                           <span className="text-[10px] font-bold text-slate-300 dark:text-slate-600 flex items-center gap-1"><Calendar className="w-3 h-3" />{new Date(t.createdAt).toLocaleDateString()}</span>
                         </div>
                         <span className={`block text-base font-semibold transition-all truncate ${t.completed ? "text-slate-400 dark:text-slate-600 line-through" : "text-slate-700 dark:text-slate-200"}`}>{t.text}</span>
                       </div>
-                      {(user.role === "admin" || t.completed) && (
+                      {t.completed && (
                         <button onClick={() => deleteTask(t.id)} className="flex-shrink-0 p-3 text-slate-300 dark:text-slate-600 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-2xl transition-all opacity-0 group-hover:opacity-100">
                           <Trash2 className="w-5 h-5" />
                         </button>
