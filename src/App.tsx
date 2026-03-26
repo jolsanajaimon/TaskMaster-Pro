@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { 
   Plus, Trash2, CheckCircle2, Circle, ListTodo, Search, Filter, 
-  Calendar, Tag, AlertCircle, Sparkles, Moon, Sun, LogOut, ShieldCheck, User as UserIcon, LogIn, Mail
+  Calendar, Tag, AlertCircle, Sparkles, Moon, Sun, LogOut, ShieldCheck, User as UserIcon, LogIn
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
  
@@ -16,7 +16,7 @@ interface Task {
  
 type FilterType = "all" | "active" | "completed";
 type UserRole = "user" | "admin" | null;
-type AuthScreen = "role" | "login" | "register" | "forgot" | "reset";
+type AuthScreen = "role" | "login" | "register" | "forgot" | "verify";
  
 interface AuthUser {
   username: string;
@@ -42,7 +42,7 @@ export default function App() {
   const [loginPassword, setLoginPassword] = useState("");
   const [loginEmail, setLoginEmail] = useState("");
   const [forgotEmail, setForgotEmail] = useState("");
-  const [resetToken, setResetToken] = useState("");
+  const [resetCode, setResetCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [authError, setAuthError] = useState("");
@@ -59,16 +59,6 @@ export default function App() {
   const [category, setCategory] = useState("Personal");
   const [filter, setFilter] = useState<FilterType>("all");
   const [searchQuery, setSearchQuery] = useState("");
- 
-  // Check for reset token in URL
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get("token");
-    if (token) {
-      setResetToken(token);
-      setAuthScreen("reset");
-    }
-  }, []);
  
   useEffect(() => {
     if (user) {
@@ -115,6 +105,8 @@ export default function App() {
     setLoginPassword("");
     setLoginEmail("");
     setForgotEmail("");
+    setResetCode("");
+    setNewPassword("");
     setAuthError("");
     setAuthMessage("");
   };
@@ -135,11 +127,8 @@ export default function App() {
         body: JSON.stringify({ username: loginUsername, password: loginPassword, role: selectedRole })
       });
       const data = await res.json();
-      if (res.ok) {
-        setUser(data);
-      } else {
-        setAuthError(data.error || "Login failed");
-      }
+      if (res.ok) setUser(data);
+      else setAuthError(data.error || "Login failed");
     } catch {
       setAuthError("Server connection failed");
     }
@@ -162,9 +151,7 @@ export default function App() {
       if (res.ok) {
         setAuthScreen("login");
         setAuthMessage("Account created! Please sign in.");
-        setLoginUsername("");
-        setLoginPassword("");
-        setLoginEmail("");
+        resetAuthForm();
       } else {
         setAuthError(data.error || "Registration failed");
       }
@@ -173,7 +160,7 @@ export default function App() {
     }
   };
  
-  const handleForgotPassword = async (e: React.FormEvent) => {
+  const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError("");
     setAuthMessage("");
@@ -185,9 +172,10 @@ export default function App() {
       });
       const data = await res.json();
       if (res.ok) {
-        setAuthMessage("Reset link sent! Check your email.");
+        setAuthScreen("verify");
+        setAuthMessage("6-digit code sent to your email!");
       } else {
-        setAuthError(data.error || "Failed to send reset email");
+        setAuthError(data.error || "Failed to send code");
       }
     } catch {
       setAuthError("Server connection failed");
@@ -205,17 +193,15 @@ export default function App() {
       const res = await fetch("/api/auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: resetToken, password: newPassword })
+        body: JSON.stringify({ email: forgotEmail, code: resetCode, password: newPassword })
       });
       const data = await res.json();
       if (res.ok) {
-        setAuthMessage("Password reset! You can now sign in.");
         setAuthScreen("role");
-        setResetToken("");
-        setNewPassword("");
-        window.history.replaceState({}, "", "/");
+        setAuthMessage("Password reset! You can now sign in.");
+        resetAuthForm();
       } else {
-        setAuthError(data.error || "Reset failed");
+        setAuthError(data.error || "Invalid or expired code");
       }
     } catch {
       setAuthError("Server connection failed");
@@ -258,14 +244,10 @@ export default function App() {
   };
  
   const bulkComplete = () => {
-    if (user?.role === "admin") {
-      setTasks(tasks.map(t => ({ ...t, completed: true })));
-    }
+    if (user?.role === "admin") setTasks(tasks.map(t => ({ ...t, completed: true })));
   };
  
-  const clearCompleted = () => {
-    setTasks(tasks.filter(t => !t.completed));
-  };
+  const clearCompleted = () => setTasks(tasks.filter(t => !t.completed));
  
   const filteredTasks = useMemo(() => {
     return tasks
@@ -286,55 +268,46 @@ export default function App() {
   const stats = useMemo(() => {
     const total = tasks.length;
     const completed = tasks.filter(t => t.completed).length;
-    const active = total - completed;
-    return { total, completed, active };
+    return { total, completed, active: total - completed };
   }, [tasks]);
  
-  // --- Shared input styles ---
   const inputClass = "w-full px-5 py-3 bg-slate-100 dark:bg-slate-800 border-transparent focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 rounded-2xl text-sm outline-none transition-all font-medium text-slate-700 dark:text-slate-200";
  
   const MessageBlock = () => (
     <>
-      {authError && (
-        <motion.p initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="text-rose-500 text-xs font-bold ml-1">
-          {authError}
-        </motion.p>
-      )}
-      {authMessage && (
-        <motion.p initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="text-emerald-500 text-xs font-bold ml-1">
-          {authMessage}
-        </motion.p>
-      )}
+      {authError && <motion.p initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="text-rose-500 text-xs font-bold ml-1">{authError}</motion.p>}
+      {authMessage && <motion.p initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="text-emerald-500 text-xs font-bold ml-1">{authMessage}</motion.p>}
     </>
   );
  
-  // --- Auth Screen ---
+  const getTitle = () => {
+    if (authScreen === "role") return "Welcome Back";
+    if (authScreen === "login") return `${selectedRole === "admin" ? "Admin" : "User"} Login`;
+    if (authScreen === "register") return `${selectedRole === "admin" ? "Admin" : "User"} Sign Up`;
+    if (authScreen === "forgot") return "Forgot Password";
+    if (authScreen === "verify") return "Enter Reset Code";
+    return "";
+  };
+ 
+  const getSubtitle = () => {
+    if (authScreen === "role") return "Please select your login type";
+    if (authScreen === "login") return "Enter your credentials";
+    if (authScreen === "register") return "Create your account";
+    if (authScreen === "forgot") return "Enter your registered email";
+    if (authScreen === "verify") return "Check your email for the 6-digit code";
+    return "";
+  };
+ 
   if (!user) {
     return (
       <div className={`min-h-screen flex items-center justify-center p-4 bg-slate-50 dark:bg-slate-950 transition-colors duration-300 ${isDarkMode ? "dark" : ""}`}>
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="w-full max-w-md bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] shadow-2xl shadow-slate-200/80 dark:shadow-none border border-slate-100 dark:border-slate-800"
-        >
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] shadow-2xl shadow-slate-200/80 dark:shadow-none border border-slate-100 dark:border-slate-800">
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center p-3 bg-indigo-600 rounded-2xl shadow-xl shadow-indigo-200 dark:shadow-none mb-4">
               <ListTodo className="w-8 h-8 text-white" />
             </div>
-            <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-2">
-              {authScreen === "role" && "Welcome Back"}
-              {authScreen === "login" && `${selectedRole === "admin" ? "Admin" : "User"} Login`}
-              {authScreen === "register" && `${selectedRole === "admin" ? "Admin" : "User"} Sign Up`}
-              {authScreen === "forgot" && "Forgot Password"}
-              {authScreen === "reset" && "Reset Password"}
-            </h1>
-            <p className="text-slate-500 dark:text-slate-400 font-medium">
-              {authScreen === "role" && "Please select your login type"}
-              {authScreen === "login" && "Enter your credentials"}
-              {authScreen === "register" && "Create your account"}
-              {authScreen === "forgot" && "Enter your registered email"}
-              {authScreen === "reset" && "Enter your new password"}
-            </p>
+            <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-2">{getTitle()}</h1>
+            <p className="text-slate-500 dark:text-slate-400 font-medium">{getSubtitle()}</p>
           </div>
  
           {/* Role Selection */}
@@ -350,7 +323,7 @@ export default function App() {
                 </div>
                 <LogIn className="w-5 h-5 opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>
-              <button onClick={() => handleRoleSelect("user")} className="w-full flex items-center justify-between p-5 bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 hover:border-indigo-500 dark:hover:border-indigo-500 text-slate-700 dark:text-slate-200 rounded-2xl transition-all group">
+              <button onClick={() => handleRoleSelect("user")} className="w-full flex items-center justify-between p-5 bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 hover:border-indigo-500 text-slate-700 dark:text-slate-200 rounded-2xl transition-all group">
                 <div className="flex items-center gap-4">
                   <div className="p-2 bg-slate-100 dark:bg-slate-700 rounded-xl"><UserIcon className="w-6 h-6" /></div>
                   <div className="text-left">
@@ -360,15 +333,11 @@ export default function App() {
                 </div>
                 <LogIn className="w-5 h-5 opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>
-              {authMessage && (
-                <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-emerald-500 text-xs font-bold text-center">
-                  {authMessage}
-                </motion.p>
-              )}
+              {authMessage && <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-emerald-500 text-xs font-bold text-center">{authMessage}</motion.p>}
             </div>
           )}
  
-          {/* Login Form */}
+          {/* Login */}
           {authScreen === "login" && (
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
@@ -381,21 +350,17 @@ export default function App() {
               </div>
               <MessageBlock />
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => { setAuthScreen("role"); resetAuthForm(); }} className="flex-1 px-5 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all">Back</button>
+                <button type="button" onClick={() => { setAuthScreen("role"); resetAuthForm(); }} className="flex-1 px-5 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold rounded-2xl hover:bg-slate-200 transition-all">Back</button>
                 <button type="submit" className="flex-[2] px-5 py-3 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-all">Sign In</button>
               </div>
               <div className="flex items-center justify-between pt-2">
-                <button type="button" onClick={() => { setAuthScreen("register"); resetAuthForm(); }} className="text-xs font-bold text-indigo-600 hover:text-indigo-700 transition-colors">
-                  Don't have an account? Sign Up
-                </button>
-                <button type="button" onClick={() => { setAuthScreen("forgot"); resetAuthForm(); }} className="text-xs font-bold text-slate-400 hover:text-indigo-500 transition-colors">
-                  Forgot password?
-                </button>
+                <button type="button" onClick={() => { setAuthScreen("register"); resetAuthForm(); }} className="text-xs font-bold text-indigo-600 hover:text-indigo-700 transition-colors">Don't have an account? Sign Up</button>
+                <button type="button" onClick={() => { setAuthScreen("forgot"); resetAuthForm(); }} className="text-xs font-bold text-slate-400 hover:text-indigo-500 transition-colors">Forgot password?</button>
               </div>
             </form>
           )}
  
-          {/* Register Form */}
+          {/* Register */}
           {authScreen === "register" && (
             <form onSubmit={handleRegister} className="space-y-4">
               <div>
@@ -412,36 +377,43 @@ export default function App() {
               </div>
               <MessageBlock />
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => { setAuthScreen("login"); resetAuthForm(); }} className="flex-1 px-5 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all">Back</button>
+                <button type="button" onClick={() => { setAuthScreen("login"); resetAuthForm(); }} className="flex-1 px-5 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold rounded-2xl hover:bg-slate-200 transition-all">Back</button>
                 <button type="submit" className="flex-[2] px-5 py-3 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-all">Sign Up</button>
               </div>
             </form>
           )}
  
-          {/* Forgot Password Form */}
+          {/* Forgot Password */}
           {authScreen === "forgot" && (
-            <form onSubmit={handleForgotPassword} className="space-y-4">
+            <form onSubmit={handleSendCode} className="space-y-4">
               <div>
                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">Email</label>
                 <input type="email" required value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} className={inputClass} placeholder="your@email.com" />
               </div>
               <MessageBlock />
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => { setAuthScreen("role"); resetAuthForm(); }} className="flex-1 px-5 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all">Back</button>
-                <button type="submit" className="flex-[2] px-5 py-3 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-all">Send Reset Link</button>
+                <button type="button" onClick={() => { setAuthScreen("role"); resetAuthForm(); }} className="flex-1 px-5 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold rounded-2xl hover:bg-slate-200 transition-all">Back</button>
+                <button type="submit" className="flex-[2] px-5 py-3 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-all">Send Code</button>
               </div>
             </form>
           )}
  
-          {/* Reset Password Form */}
-          {authScreen === "reset" && (
+          {/* Verify Code & Reset */}
+          {authScreen === "verify" && (
             <form onSubmit={handleResetPassword} className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">6-Digit Code</label>
+                <input type="text" required maxLength={6} value={resetCode} onChange={e => setResetCode(e.target.value)} className={`${inputClass} text-center text-2xl tracking-[0.5em] font-bold`} placeholder="······" />
+              </div>
               <div>
                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">New Password</label>
                 <input type="password" required value={newPassword} onChange={e => setNewPassword(e.target.value)} className={inputClass} placeholder="Min 6 characters" />
               </div>
               <MessageBlock />
-              <button type="submit" className="w-full px-5 py-3 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-all">Reset Password</button>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => { setAuthScreen("forgot"); setAuthError(""); setAuthMessage(""); }} className="flex-1 px-5 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold rounded-2xl hover:bg-slate-200 transition-all">Back</button>
+                <button type="submit" className="flex-[2] px-5 py-3 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-all">Reset Password</button>
+              </div>
             </form>
           )}
  
@@ -455,7 +427,6 @@ export default function App() {
     );
   }
  
-  // --- Main App Screen ---
   return (
     <div className={`min-h-screen py-8 px-4 sm:px-6 lg:px-8 bg-slate-50 dark:bg-slate-950 transition-colors duration-300 ${isDarkMode ? "dark" : ""}`}>
       <div className="max-w-3xl mx-auto">
@@ -465,9 +436,7 @@ export default function App() {
               <ListTodo className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                Task Master <span className="text-indigo-600">Pro</span>
-              </h1>
+              <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">Task Master <span className="text-indigo-600">Pro</span></h1>
               <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest">
                 {user.role === "admin" ? <ShieldCheck className="w-3 h-3 text-indigo-500" /> : <UserIcon className="w-3 h-3 text-slate-400" />}
                 {user.username}
@@ -480,10 +449,10 @@ export default function App() {
                 <Sparkles className="w-3 h-3 animate-spin" />Syncing
               </div>
             )}
-            <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 hover:text-indigo-500 hover:border-indigo-100 dark:hover:border-indigo-900 transition-all shadow-sm">
+            <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 hover:text-indigo-500 transition-all shadow-sm">
               {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
-            <button onClick={handleLogout} className="p-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 hover:text-rose-500 hover:border-rose-100 dark:hover:border-rose-900 transition-all shadow-sm">
+            <button onClick={handleLogout} className="p-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 hover:text-rose-500 transition-all shadow-sm">
               <LogOut className="w-5 h-5" />
             </button>
           </div>
@@ -535,9 +504,7 @@ export default function App() {
           <div className="px-8 py-5 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row gap-5 items-center justify-between">
             <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl w-full md:w-auto">
               {(["all", "active", "completed"] as FilterType[]).map(f => (
-                <button key={f} onClick={() => setFilter(f)} className={`flex-1 md:flex-none px-6 py-2 rounded-xl text-sm font-bold capitalize transition-all ${filter === f ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-md" : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"}`}>
-                  {f}
-                </button>
+                <button key={f} onClick={() => setFilter(f)} className={`flex-1 md:flex-none px-6 py-2 rounded-xl text-sm font-bold capitalize transition-all ${filter === f ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-md" : "text-slate-500 hover:text-slate-700 dark:text-slate-400"}`}>{f}</button>
               ))}
             </div>
             <div className="flex items-center gap-4 w-full md:w-auto">
@@ -546,14 +513,10 @@ export default function App() {
                 <input type="text" placeholder="Search tasks..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-11 pr-4 py-2.5 bg-slate-100 dark:bg-slate-800 border-transparent focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 rounded-2xl text-sm outline-none transition-all font-medium text-slate-700 dark:text-slate-200" />
               </div>
               {stats.completed > 0 && (
-                <button onClick={clearCompleted} className="p-2.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all flex-shrink-0" title="Clear completed tasks">
-                  <Trash2 className="w-5 h-5" />
-                </button>
+                <button onClick={clearCompleted} className="p-2.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all flex-shrink-0"><Trash2 className="w-5 h-5" /></button>
               )}
               {user.role === "admin" && stats.active > 0 && (
-                <button onClick={bulkComplete} className="p-2.5 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-xl transition-all flex-shrink-0" title="Admin: Bulk complete all tasks">
-                  <CheckCircle2 className="w-5 h-5" />
-                </button>
+                <button onClick={bulkComplete} className="p-2.5 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-xl transition-all flex-shrink-0"><CheckCircle2 className="w-5 h-5" /></button>
               )}
             </div>
           </div>
@@ -610,3 +573,4 @@ export default function App() {
     </div>
   );
 }
+ 

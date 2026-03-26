@@ -27,8 +27,8 @@ interface IUser extends Document {
   password: string;
   role: "user" | "admin";
   email: string;
-  resetToken?: string;
-  resetTokenExpiry?: number;
+  resetCode?: string;
+  resetCodeExpiry?: number;
   tasks: ITask[];
 }
  
@@ -46,14 +46,14 @@ const UserSchema = new Schema<IUser>({
   password: { type: String, required: true },
   role: { type: String, enum: ["user", "admin"], required: true },
   email: { type: String, default: "" },
-  resetToken: { type: String },
-  resetTokenExpiry: { type: Number },
+  resetCode: { type: String },
+  resetCodeExpiry: { type: Number },
   tasks: [TaskSchema],
 });
  
 const User = mongoose.model<IUser>("User", UserSchema);
  
-// --- Nodemailer Setup ---
+// --- Resend Setup ---
 const resend = new Resend(process.env.RESEND_API_KEY);
  
 // --- Seed default users ---
@@ -111,7 +111,7 @@ async function startServer() {
     res.json({ username: user.username, role: user.role });
   });
  
-  // Auth: Forgot Password
+  // Auth: Send Reset Code
   app.post("/api/auth/forgot-password", async (req, res) => {
     const { email } = req.body;
     const user = await User.findOne({ email });
@@ -119,53 +119,52 @@ async function startServer() {
       return res.status(404).json({ error: "No account found with this email" });
     }
  
-    const token = crypto.randomBytes(32).toString("hex");
-    const expiry = Date.now() + 3600000; // 1 hour
+    // Generate 6-digit code
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiry = Date.now() + 600000; // 10 minutes
  
     await User.findByIdAndUpdate(user._id, {
-      resetToken: token,
-      resetTokenExpiry: expiry,
+      resetCode: code,
+      resetCodeExpiry: expiry,
     });
- 
-    const resetUrl = `${process.env.APP_URL}/reset-password?token=${token}`;
  
     await resend.emails.send({
       from: "onboarding@resend.dev",
       to: email,
-      subject: "TaskMaster Pro — Password Reset",
-      headers: {
-        "X-Entity-Ref-ID": crypto.randomUUID(),
-      },
+      subject: "TaskMaster Pro — Your Reset Code",
       html: `
         <div style="font-family: sans-serif; max-width: 400px; margin: auto; padding: 2rem; border: 1px solid #e2e8f0; border-radius: 16px;">
           <h2 style="color: #4f46e5;">Reset Your Password</h2>
-          <p>Click the button below to reset your password. This link expires in 1 hour.</p>
-          <a href="${resetUrl}" style="display: inline-block; padding: 12px 24px; background: #4f46e5; color: white; border-radius: 8px; text-decoration: none; font-weight: bold;">Reset Password</a>
-          <p style="color: #94a3b8; font-size: 12px; margin-top: 1rem;">If you didn't request this, ignore this email.</p>
+          <p>Use the code below to reset your password. This code expires in <strong>10 minutes</strong>.</p>
+          <div style="text-align: center; margin: 2rem 0;">
+            <span style="font-size: 40px; font-weight: bold; letter-spacing: 12px; color: #4f46e5;">${code}</span>
+          </div>
+          <p style="color: #94a3b8; font-size: 12px;">If you didn't request this, ignore this email.</p>
         </div>
       `,
     });
  
-    res.json({ success: true, message: "Reset link sent to your email" });
+    res.json({ success: true, message: "Reset code sent to your email" });
   });
  
-  // Auth: Reset Password
+  // Auth: Verify Code & Reset Password
   app.post("/api/auth/reset-password", async (req, res) => {
-    const { token, password } = req.body;
+    const { email, code, password } = req.body;
     const user = await User.findOne({
-      resetToken: token,
-      resetTokenExpiry: { $gt: Date.now() },
+      email,
+      resetCode: code,
+      resetCodeExpiry: { $gt: Date.now() },
     });
  
     if (!user) {
-      return res.status(400).json({ error: "Invalid or expired reset link" });
+      return res.status(400).json({ error: "Invalid or expired code" });
     }
  
     const hashedPassword = await bcrypt.hash(password, 10);
     await User.findByIdAndUpdate(user._id, {
       password: hashedPassword,
-      resetToken: undefined,
-      resetTokenExpiry: undefined,
+      resetCode: undefined,
+      resetCodeExpiry: undefined,
     });
  
     res.json({ success: true, message: "Password reset successfully" });
