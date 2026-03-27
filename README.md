@@ -2,7 +2,9 @@
 
 A full-stack task management app built with React, TypeScript, Express, and MongoDB. Features role-based authentication, an admin dashboard for managing users and assigning tasks, forgot password via email, dark mode, and real-time sync across all devices.
 
-🌐 **Live Demo:** https://taskmaster-pro-1ooi.onrender.com
+## 🚀 Live Demo
+
+Check out the live site: https://taskmaster-pro-1ooi.onrender.com
 
 ---
 
