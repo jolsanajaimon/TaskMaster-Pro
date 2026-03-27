@@ -180,4 +180,4 @@ Here are the features planned for future versions of TaskMaster Pro:
 - 🔗 **Task dependencies** — link tasks so one must be completed before another
 ```
 
-Built with ❤️ by Jolsana Jaimon
+*Built with ❤️ by Jolsana Jaimon*
