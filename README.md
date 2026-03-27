@@ -1,22 +1,8 @@
 # TaskMaster Pro
 
-A full-stack task management app built with React, TypeScript, Express, and Vite. Features user authentication with role-based access, task priorities, categories, dark mode, and real-time sync across devices.
+A full-stack task management app built with React, TypeScript, Express, and MongoDB. Features role-based authentication, an admin dashboard for managing users and assigning tasks, forgot password via email, dark mode, and real-time sync across all devices.
 
-🌐 **Live Demo:** https://taskmaster-pro-1ooi.onrender.com/
-
----
-
-## Features
-
-- 🔐 **Authentication** — Login and registration with hashed passwords (bcrypt)
-- 👥 **Role-based access** — Admin and User roles with different permissions
-- ✅ **Task management** — Add, complete, and delete tasks
-- 🏷️ **Priorities** — High, Medium, Low
-- 📂 **Categories** — Personal, Work, Shopping, Health, Other
-- 🔍 **Search & Filter** — Search by keyword, filter by status
-- 🌙 **Dark mode** — Persistent theme toggle
-- 📊 **Stats dashboard** — Total, Active, and Completed task counts
-- 🔄 **Real-time sync** — Tasks sync across all devices instantly
+🌐 **Live Demo:** https://taskmaster-pro-1ooi.onrender.com
 
 ---
 
@@ -25,23 +11,52 @@ A full-stack task management app built with React, TypeScript, Express, and Vite
 ### Login Screen
 ![Login Screen](screenshots/login.png)
 
-### Main App — Light Mode
-![Main App Light](screenshots/main-light.png)
+### Admin Dashboard
+![Admin Dashboard](screenshots/admin.png)
 
-### Main App — Dark Mode
-![Main App Dark](screenshots/main-dark.png)
+### User Task Manager
+![User Tasks](screenshots/user.png)
 
-> To add screenshots: create a `screenshots/` folder in your project, take screenshots of the app, save them as `login.png`, `main-light.png`, and `main-dark.png`, then push to GitHub.
+> To add screenshots: create a `screenshots/` folder, take screenshots of the app, save them and push to GitHub.
+
+---
+
+## Features
+
+### Admin
+- 👥 View all registered users with task statistics
+- 📋 View any user's task list
+- ➕ Assign tasks to specific users with priority and category
+- 🗑️ Delete user accounts
+- 🔑 Reset any user's password directly from the dashboard
+
+### User
+- ✅ Add, complete, and delete tasks
+- 🏷️ Set priority (High, Medium, Low) and category
+- 🔍 Search and filter tasks (All / Active / Completed)
+- 👤 Edit profile — update email and change password
+- 📧 Forgot password with 6-digit code via email
+- 🌙 Dark mode with persistent preference
+
+### App
+- 💾 Data persists across devices (MongoDB Atlas)
+- 🔐 Passwords hashed with bcrypt
+- 📱 Accessible from any device worldwide
+- 🚀 Deployed on Render with UptimeRobot keep-alive
 
 ---
 
 ## Tech Stack
 
-- **Frontend** — React, TypeScript, Tailwind CSS, Framer Motion
-- **Backend** — Express.js, TypeScript
-- **Build tool** — Vite
-- **Security** — bcrypt password hashing
-- **Deployment** — Railway
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React, TypeScript, Tailwind CSS, Framer Motion |
+| Backend | Express.js, TypeScript |
+| Database | MongoDB Atlas (Mongoose) |
+| Email | Brevo HTTP API |
+| Build tool | Vite |
+| Deployment | Render |
+| Monitoring | UptimeRobot |
 
 ---
 
@@ -50,6 +65,8 @@ A full-stack task management app built with React, TypeScript, Express, and Vite
 ### Prerequisites
 - Node.js v18+
 - npm
+- MongoDB Atlas account
+- Brevo account (for email)
 
 ### Installation
 
@@ -61,84 +78,104 @@ cd TaskMaster-Pro
 
 2. Install dependencies:
 ```bash
-npm install
+npm install --include=dev
 ```
 
-3. Create a `.env` file from the example:
-```bash
-cp .env.example .env
-```
-
-4. Fill in your `.env` values:
+3. Create a `.env` file:
 ```env
-GEMINI_API_KEY=your_gemini_api_key
-APP_URL=http://localhost:3000
+MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/taskmaster
 ADMIN_PASSWORD=your_admin_password
-USER_PASSWORD=your_user_password
+BREVO_API_KEY=your_brevo_api_key
+APP_URL=http://localhost:3000
+NODE_ENV=development
 ```
 
-5. Build and run the server:
+4. Run the server:
 ```bash
-npx tsc --outDir dist-server server.ts --module nodenext --moduleResolution nodenext --target es2020 --esModuleInterop && node dist-server/server.js
+node dist-server/server.js
 ```
 
-6. Open your browser at:
-```
-http://localhost:3000
-```
+5. Open your browser at `http://localhost:3000`
 
 ---
 
 ## Default Credentials
 
-| Role  | Username | Password   |
-|-------|----------|------------|
-| Admin | admin    | admin123   |
-| User  | user     | user123    |
+| Role | Username | Password |
+|------|----------|----------|
+| Admin | admin | *(set in .env)* |
 
-> ⚠️ Change these in your `.env` file before deploying.
+> Regular users register through the app.
 
 ---
 
 ## Role Permissions
 
-| Feature                  | Admin | User |
-|--------------------------|-------|------|
-| Add tasks                | ✅    | ✅   |
-| Complete tasks           | ✅    | ✅   |
-| Delete completed tasks   | ✅    | ✅   |
-| Delete any task          | ✅    | ❌   |
-| Bulk complete all tasks  | ✅    | ❌   |
+| Feature | Admin | User |
+|---------|-------|------|
+| View all users | ✅ | ❌ |
+| Assign tasks to users | ✅ | ❌ |
+| Delete user accounts | ✅ | ❌ |
+| Reset any user's password | ✅ | ❌ |
+| Add own tasks | ❌ | ✅ |
+| Complete tasks | ✅ | ✅ |
+| Delete completed tasks | ✅ | ✅ |
+| Edit own profile | ✅ | ✅ |
+| Forgot password via email | ✅ | ✅ |
 
 ---
 
 ## Deployment
 
-This app is deployed on [Railway](https://railway.app).
+This app is deployed on [Render](https://render.com).
 
-To deploy your own instance:
+### Deploy your own instance:
 1. Push your code to GitHub
-2. Create a new project on Railway
+2. Create a new **Web Service** on Render
 3. Connect your GitHub repo
-4. Add environment variables
-5. Set the start command:
-```bash
-npx tsc --outDir dist-server server.ts --module nodenext --moduleResolution nodenext --target es2020 --esModuleInterop && node dist-server/server.js
-```
+4. Set **Build Command:** `npm install --include=dev`
+5. Set **Start Command:** `node dist-server/server.js`
+6. Add all environment variables
+7. Click **Deploy**
+
+### Keep alive with UptimeRobot:
+- Go to [uptimerobot.com](https://uptimerobot.com)
+- Create a free HTTP monitor for your Render URL
+- Set interval to 5 minutes
+- Your app will stay awake 24/7 for free!
 
 ---
 
-## Screenshots Setup
+## Updating the App
 
-1. Take screenshots of your running app
-2. Create a `screenshots` folder in your project root
-3. Save images as `login.png`, `main-light.png`, `main-dark.png`
-4. Push to GitHub:
+After making changes locally:
+
 ```bash
-git add screenshots/
-git commit -m "add screenshots"
+npx vite build
+./node_modules/.bin/tsc --outDir dist-server server.ts --module nodenext --moduleResolution nodenext --target es2020 --esModuleInterop --skipLibCheck
+git add .
+git commit -m "describe your changes"
 git push
 ```
 
+Render will auto-redeploy on every push.
+
+---
+
+## Roadmap
+
+Here are the features planned for future versions of TaskMaster Pro:
+
+- 📅 **Due dates** — set deadlines for tasks with reminders
+- 🔔 **Email notifications** — notify users when a task is assigned to them
+- 📊 **Analytics dashboard** — charts showing task completion rates over time
+- 🏷️ **Custom categories** — let users create their own task categories
+- 👥 **Team workspaces** — group users into teams with shared task boards
+- 📎 **File attachments** — attach files or images to tasks
+- 💬 **Task comments** — add notes or comments to individual tasks
+- 📱 **Mobile app** — native iOS and Android apps
+- 🌍 **Multi-language support** — support for multiple languages
+- 🔗 **Task dependencies** — link tasks so one must be completed before another
+```
+
 Built with ❤️ by Jolsana Jaimon
-# Brevo SMTP
