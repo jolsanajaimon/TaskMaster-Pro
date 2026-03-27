@@ -61,17 +61,17 @@ async function seedDefaultUsers() {
         });
         console.log("Default admin user created");
     }
-    const userExists = await User.findOne({ username: "user" });
-    if (!userExists) {
-        await User.create({
-            username: "user",
-            password: await bcrypt.hash(process.env.USER_PASSWORD || "user123", 10),
-            role: "user",
-            email: "",
-            tasks: [],
-        });
-        console.log("Default user created");
-    }
+    //   const userExists = await User.findOne({ username: "user" });
+    //   if (!userExists) {
+    //     await User.create({
+    //       username: "user",
+    //       password: await bcrypt.hash(process.env.USER_PASSWORD || "user123", 10),
+    //       role: "user",
+    //       email: "",
+    //       tasks: [],
+    //     });
+    //     console.log("Default user created");
+    //   }
 }
 async function startServer() {
     const app = express();
