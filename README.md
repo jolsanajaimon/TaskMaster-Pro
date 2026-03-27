@@ -17,6 +17,12 @@ A full-stack task management app built with React, TypeScript, Express, and Mong
 ### User Task Manager
 ![User Tasks](screenshots/user.png)
 
+### Main App — Light Mode
+![Main App Light](screenshots/main-light.png)
+
+### Main App — Dark Mode
+![Main App Dark](screenshots/main-dark.png)
+
 > To add screenshots: create a `screenshots/` folder, take screenshots of the app, save them and push to GitHub.
 
 ---
